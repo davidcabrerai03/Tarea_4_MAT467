@@ -1,0 +1,314 @@
+
+# Instalar paquetes si es necesario
+# install.packages("readxl")
+# install.packages("geoR")
+
+library(readxl)
+library(geoR)
+
+# ============================================================
+# 1) Leer datos
+# ============================================================
+
+datos <- read_excel("Datos forestales.xls", sheet = "Ppodatot")
+datos <- as.data.frame(datos)
+
+# Seleccionar variables necesarias
+datos <- datos[, c("EJE_X", "EJE_Y", "ABTOT", "ALMEDTOT")]
+datos <- na.omit(datos)
+
+# Variable respuesta
+Y <- datos$ALMEDTOT
+
+# Coordenadas espaciales
+coords <- as.matrix(datos[, c("EJE_X", "EJE_Y")])
+
+# Coordenadas centradas y escaladas para usarlas como covariables
+datos$Xc <- (datos$EJE_X - mean(datos$EJE_X)) / 1000
+datos$Yc <- (datos$EJE_Y - mean(datos$EJE_Y)) / 1000
+
+# Matriz de diseño:
+# Intercepto + ABTOT + coordenada X centrada + coordenada Y centrada
+X <- model.matrix(~ ABTOT + Xc + Yc, data = datos)
+
+# ============================================================
+# 2) Variograma empírico de ALMEDTOT
+# ============================================================
+
+geo_y <- as.geodata(
+  datos,
+  coords.col = c("EJE_X", "EJE_Y"),
+  data.col = "ALMEDTOT"
+)
+
+vario_y <- variog(
+  geo_y,
+  estimator.type = "classical",
+  max.dist = 8000,
+  messages = FALSE
+)
+
+# Graficar variograma empírico
+plot(
+  vario_y,
+  main = "Variograma empírico de ALMEDTOT",
+  xlab = "Distancia",
+  ylab = "Semivarianza"
+)
+
+# Guardar imagen para LaTeX
+png("variograma_empirico_ALMEDTOT.png", width = 900, height = 600)
+
+plot(
+  vario_y,
+  main = "Variograma empírico de ALMEDTOT",
+  xlab = "Distancia",
+  ylab = "Semivarianza"
+)
+
+dev.off()
+
+# ============================================================
+# 3) Ajuste Matérn al variograma empírico con variofit
+#    Esto sirve como ajuste visual y valores iniciales.
+# ============================================================
+
+fit.vario.matern <- variofit(
+  vario_y,
+  cov.model = "matern",
+  ini.cov.pars = c(0.8, 3000), # c(sigmasq, phi)
+  nugget = 0.5,
+  fix.nugget = FALSE,
+  kappa = 1,
+  fix.kappa = FALSE,
+  weights = "cressie",
+  messages = FALSE
+)
+
+fit.vario.matern
+
+# Graficar variograma empírico con ajuste Matérn
+plot(
+  vario_y,
+  main = "Variograma empírico de ALMEDTOT con ajuste Matérn",
+  xlab = "Distancia",
+  ylab = "Semivarianza"
+)
+
+lines(fit.vario.matern, lwd = 2)
+
+# Guardar imagen para LaTeX
+png("variograma_matern_ALMEDTOT.png", width = 900, height = 600)
+
+plot(
+  vario_y,
+  main = "Variograma empírico de ALMEDTOT con ajuste Matérn",
+  xlab = "Distancia",
+  ylab = "Semivarianza"
+)
+
+lines(fit.vario.matern, lwd = 2)
+
+dev.off()
+
+# ============================================================
+# 4) Función de correlación Matérn
+# ============================================================
+
+matern_cor <- function(D, phi, kappa) {
+  
+  Z <- D / phi
+  
+  R <- matrix(1, nrow(D), ncol(D))
+  
+  ind <- Z > 0
+  
+  R[ind] <- (2^(1 - kappa) / gamma(kappa)) *
+    (Z[ind]^kappa) * besselK(Z[ind], kappa)
+  
+  R[!is.finite(R)] <- 0
+  diag(R) <- 1
+  
+  return(R)
+}
+
+# Matriz de distancias
+D <- as.matrix(dist(coords))
+
+# ============================================================
+# 5) Log-verosimilitud restringida negativa REML
+# ============================================================
+
+neg_REML <- function(par, Y, X, D) {
+  
+  # Los parámetros se optimizan en escala log para que sean positivos
+  sigmasq <- exp(par[1])
+  phi     <- exp(par[2])
+  nugget  <- exp(par[3])
+  kappa   <- exp(par[4])
+  
+  n <- length(Y)
+  p <- ncol(X)
+  
+  # Matriz de correlación Matérn
+  R <- matern_cor(D, phi, kappa)
+  
+  # Matriz de covarianza
+  Sigma <- sigmasq * R + nugget * diag(n)
+  
+  # Para evitar errores numéricos
+  chol_Sigma <- try(chol(Sigma), silent = TRUE)
+  
+  if (inherits(chol_Sigma, "try-error")) {
+    return(1e10)
+  }
+  
+  # Inversa de Sigma
+  Sigma_inv <- chol2inv(chol_Sigma)
+  
+  XtSiX <- t(X) %*% Sigma_inv %*% X
+  chol_XtSiX <- try(chol(XtSiX), silent = TRUE)
+  
+  if (inherits(chol_XtSiX, "try-error")) {
+    return(1e10)
+  }
+  
+  XtSiX_inv <- chol2inv(chol_XtSiX)
+  
+  # Estimador GLS de beta
+  beta_hat <- XtSiX_inv %*% t(X) %*% Sigma_inv %*% Y
+  
+  # Residuos
+  res <- Y - X %*% beta_hat
+  
+  # Log determinantes
+  logdet_Sigma <- 2 * sum(log(diag(chol_Sigma)))
+  logdet_XtSiX <- 2 * sum(log(diag(chol_XtSiX)))
+  
+  # Forma cuadrática
+  quad <- as.numeric(t(res) %*% Sigma_inv %*% res)
+  
+  # Log-verosimilitud restringida, salvo constante
+  logLik_REML <- -0.5 * (
+    logdet_Sigma +
+      logdet_XtSiX +
+      quad
+  )
+  
+  # optim minimiza, por eso devolvemos negativo
+  return(-logLik_REML)
+}
+
+# ============================================================
+# 6) Valores iniciales
+# ============================================================
+
+# Usamos los valores del ajuste al variograma como punto inicial
+sigmasq_ini <- fit.vario.matern$cov.pars[1]
+phi_ini     <- fit.vario.matern$cov.pars[2]
+nugget_ini  <- fit.vario.matern$nugget
+kappa_ini   <- fit.vario.matern$kappa
+
+par_ini <- log(c(
+  sigmasq_ini,
+  phi_ini,
+  nugget_ini,
+  kappa_ini
+))
+
+# ============================================================
+# 7) Estimación REML por optim
+# ============================================================
+
+fit_REML <- optim(
+  par = par_ini,
+  fn = neg_REML,
+  Y = Y,
+  X = X,
+  D = D,
+  method = "Nelder-Mead",
+  control = list(
+    maxit = 5000,
+    reltol = 1e-10
+  )
+)
+
+fit_REML$convergence
+fit_REML$value
+
+# Parámetros estimados
+theta_hat <- exp(fit_REML$par)
+
+names(theta_hat) <- c("sigmasq", "phi", "nugget", "kappa")
+
+theta_hat
+
+# ============================================================
+# 8) Construir Sigma estimada
+# ============================================================
+
+sigmasq_hat <- theta_hat["sigmasq"]
+phi_hat     <- theta_hat["phi"]
+nugget_hat  <- theta_hat["nugget"]
+kappa_hat   <- theta_hat["kappa"]
+
+R_hat <- matern_cor(D, phi_hat, kappa_hat)
+
+Sigma_hat <- sigmasq_hat * R_hat + nugget_hat * diag(length(Y))
+
+# ============================================================
+# 9) Estimador beta REML / GLS
+# ============================================================
+
+Sigma_inv <- solve(Sigma_hat)
+
+beta_REML <- solve(t(X) %*% Sigma_inv %*% X) %*%
+  t(X) %*% Sigma_inv %*% Y
+
+beta_REML
+
+# Poner nombres
+rownames(beta_REML) <- colnames(X)
+
+beta_REML
+
+# ============================================================
+# 10) Varianza estimada de beta y errores estándar
+# ============================================================
+
+var_beta <- solve(t(X) %*% Sigma_inv %*% X)
+
+se_beta <- sqrt(diag(var_beta))
+
+tabla_beta <- data.frame(
+  Estimacion = as.numeric(beta_REML),
+  Error_Estandar = se_beta,
+  z_value = as.numeric(beta_REML) / se_beta,
+  p_value = 2 * (1 - pnorm(abs(as.numeric(beta_REML) / se_beta)))
+)
+
+rownames(tabla_beta) <- colnames(X)
+
+tabla_beta
+
+# 12) Guardar resultados en un archivo de texto
+# ============================================================
+
+sink("resultados_matern_REML.txt")
+
+cat("============================================\n")
+cat("Parametros REML del modelo Matern\n")
+cat("============================================\n")
+print(theta_hat)
+
+cat("\n============================================\n")
+cat("Beta REML / GLS\n")
+cat("============================================\n")
+print(beta_REML)
+
+cat("\n============================================\n")
+cat("Tabla de coeficientes\n")
+cat("============================================\n")
+print(tabla_beta)
+
+sink()
