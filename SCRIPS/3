@@ -1,0 +1,176 @@
+# ============================================================
+# Problema 5(b) - Test de Wald y Kenward-Roger aproximado
+# ============================================================
+
+# Mostrar más cifras
+options(digits = 15)
+options(scipen = 0)
+
+# Revisar que existan los objetos del item 5(a)
+beta_REML
+var_beta
+
+# ============================================================
+# Hipótesis:
+# H0: beta_ABTOT = beta_Xc = beta_Yc = 0
+# H1: al menos uno es distinto de cero
+# ============================================================
+
+# Matriz L para seleccionar beta_ABTOT, beta_Xc y beta_Yc
+# beta_REML = (Intercepto, ABTOT, Xc, Yc)
+
+L <- matrix(
+  c(0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1),
+  nrow = 3,
+  byrow = TRUE
+)
+
+# Vector nulo
+l0 <- matrix(0, nrow = 3, ncol = 1)
+
+# Número de restricciones
+q <- nrow(L)
+
+# Tamaño muestral y número de parámetros
+n <- length(Y)
+p <- ncol(X)
+
+# ============================================================
+# Test de Wald
+# ============================================================
+
+Wald_stat <- t(L %*% beta_REML - l0) %*%
+  solve(L %*% var_beta %*% t(L)) %*%
+  (L %*% beta_REML - l0)
+
+Wald_stat <- as.numeric(Wald_stat)
+
+F_Wald <- Wald_stat / q
+
+p_Wald <- pf(
+  F_Wald,
+  df1 = q,
+  df2 = n - p,
+  lower.tail = FALSE
+)
+
+# Para p-values muy pequeños
+log_p_Wald <- pf(
+  F_Wald,
+  df1 = q,
+  df2 = n - p,
+  lower.tail = FALSE,
+  log.p = TRUE
+)
+
+log10_p_Wald <- log_p_Wald / log(10)
+
+# ============================================================
+# Test de Kenward-Roger aproximado
+# ============================================================
+# Aquí usamos una versión aproximada tomando Gamma_KR = var_beta.
+# Por eso puede coincidir con Wald.
+
+Gamma_KR <- var_beta
+
+KR_stat <- t(L %*% beta_REML - l0) %*%
+  solve(L %*% Gamma_KR %*% t(L)) %*%
+  (L %*% beta_REML - l0)
+
+KR_stat <- as.numeric(KR_stat)
+
+F_KR <- KR_stat / q
+
+m <- n - p
+
+p_KR <- pf(
+  F_KR,
+  df1 = q,
+  df2 = m,
+  lower.tail = FALSE
+)
+
+log_p_KR <- pf(
+  F_KR,
+  df1 = q,
+  df2 = m,
+  lower.tail = FALSE,
+  log.p = TRUE
+)
+
+log10_p_KR <- log_p_KR / log(10)
+
+# ============================================================
+# Tabla resumen
+# ============================================================
+
+resultados_tests <- data.frame(
+  Test = c("Wald", "Kenward-Roger aproximado"),
+  Estadistico_F = c(F_Wald, F_KR),
+  gl1 = c(q, q),
+  gl2 = c(n - p, m),
+  p_value = c(p_Wald, p_KR),
+  log_p_value = c(log_p_Wald, log_p_KR),
+  log10_p_value = c(log10_p_Wald, log10_p_KR)
+)
+
+print(resultados_tests, digits = 15)
+
+# ============================================================
+# Mostrar resultados ordenados en consola
+# ============================================================
+
+cat("\n====================================\n")
+cat("Test de Wald\n")
+cat("====================================\n")
+cat("F_Wald =", F_Wald, "\n")
+cat("gl1 =", q, "\n")
+cat("gl2 =", n - p, "\n")
+cat("p-value =", format.pval(p_Wald, digits = 15, eps = 1e-300), "\n")
+cat("log10(p-value) =", log10_p_Wald, "\n")
+
+cat("\n====================================\n")
+cat("Test de Kenward-Roger aproximado\n")
+cat("====================================\n")
+cat("F_KR =", F_KR, "\n")
+cat("gl1 =", q, "\n")
+cat("gl2 =", m, "\n")
+cat("p-value =", format.pval(p_KR, digits = 15, eps = 1e-300), "\n")
+cat("log10(p-value) =", log10_p_KR, "\n")
+
+# ============================================================
+# Guardar resultados en un archivo txt
+# ============================================================
+
+sink("resultados_tests_wald_KR.txt")
+
+cat("============================================\n")
+cat("Contraste de regresion - Wald y Kenward-Roger\n")
+cat("============================================\n\n")
+
+cat("Hipotesis nula:\n")
+cat("H0: beta_ABTOT = beta_Xc = beta_Yc = 0\n\n")
+
+cat("Test de Wald\n")
+cat("--------------------------------------------\n")
+cat("F_Wald =", F_Wald, "\n")
+cat("gl1 =", q, "\n")
+cat("gl2 =", n - p, "\n")
+cat("p-value =", format.pval(p_Wald, digits = 15, eps = 1e-300), "\n")
+cat("log10(p-value) =", log10_p_Wald, "\n\n")
+
+cat("Test de Kenward-Roger aproximado\n")
+cat("--------------------------------------------\n")
+cat("F_KR =", F_KR, "\n")
+cat("gl1 =", q, "\n")
+cat("gl2 =", m, "\n")
+cat("p-value =", format.pval(p_KR, digits = 15, eps = 1e-300), "\n")
+cat("log10(p-value) =", log10_p_KR, "\n\n")
+
+cat("Tabla resumen\n")
+cat("--------------------------------------------\n")
+print(resultados_tests, digits = 15)
+
+sink()
