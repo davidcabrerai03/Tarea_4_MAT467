@@ -1,0 +1,119 @@
+# ============================================================
+# Problema 5(c) - Diagnóstico de normalidad de ALMEDTOT
+# ============================================================
+
+# Instalar paquetes si es necesario
+if (!requireNamespace("readxl", quietly = TRUE)) {
+  install.packages("readxl")
+}
+
+if (!requireNamespace("nortest", quietly = TRUE)) {
+  install.packages("nortest")
+}
+
+library(readxl)
+library(nortest)
+
+# ============================================================
+# 1) Leer datos
+# ============================================================
+
+datos <- read_excel("Datos forestales.xls", sheet = "Ppodatot")
+datos <- as.data.frame(datos)
+
+# Seleccionar variable respuesta
+Y <- datos$ALMEDTOT
+Y <- na.omit(Y)
+
+# Revisar resumen de Y
+summary(Y)
+
+# ============================================================
+# 2) Histograma de ALMEDTOT
+# ============================================================
+
+# Mostrar histograma en pantalla
+hist(
+  Y,
+  breaks = 20,
+  main = "Histograma de ALMEDTOT",
+  xlab = "Y",
+  ylab = "Frecuencia",
+  col = "gray",
+  border = "black"
+)
+
+# Guardar histograma como imagen
+png("histograma_ALMEDTOT.png", width = 900, height = 600)
+
+hist(
+  Y,
+  breaks = 20,
+  main = "Histograma de ALMEDTOT",
+  xlab = "Y",
+  ylab = "Frecuencia",
+  col = "gray",
+  border = "black"
+)
+
+dev.off()
+
+# ============================================================
+# 3) QQ-plot de ALMEDTOT usando R base
+# ============================================================
+
+# Mostrar QQ-plot en pantalla
+qqnorm(
+  Y,
+  main = "QQ-plot de ALMEDTOT",
+  xlab = "Cuantiles teóricos normales",
+  ylab = "Cuantiles muestrales"
+)
+
+qqline(Y, lwd = 2)
+
+# Guardar QQ-plot como imagen
+png("qqplot_ALMEDTOT.png", width = 900, height = 600)
+
+qqnorm(
+  Y,
+  main = "QQ-plot de ALMEDTOT",
+  xlab = "Cuantiles teóricos normales",
+  ylab = "Cuantiles muestrales"
+)
+
+qqline(Y, lwd = 2)
+
+dev.off()
+
+# ============================================================
+# 4) Test de Anderson-Darling
+# ============================================================
+
+test_AD <- ad.test(Y)
+
+test_AD
+
+# ============================================================
+# 5) Guardar resultados en archivo de texto
+# ============================================================
+
+sink("diagnostico_ALMEDTOT.txt")
+
+cat("============================================\n")
+cat("Diagnóstico de normalidad para ALMEDTOT\n")
+cat("============================================\n\n")
+
+cat("Resumen de ALMEDTOT:\n")
+print(summary(Y))
+
+cat("\nTest de Anderson-Darling:\n")
+print(test_AD)
+
+sink()
+
+# ============================================================
+# 6) Ver ubicación de archivos generados
+# ============================================================
+
+getwd()
