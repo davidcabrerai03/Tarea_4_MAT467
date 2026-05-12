@@ -1,0 +1,61 @@
+# ==============================
+# 1) Cargar datos
+# ==============================
+df <- read.csv("Santiago.csv", sep = ";", header = TRUE)
+
+# Limpiar nombres de columnas
+names(df) <- trimws(names(df))
+
+# Revisar estructura
+str(df)
+head(df)
+
+# ==============================
+# 2) Cargar librería
+# ==============================
+library(geoR)
+
+# ==============================
+# 3) Convertir a objeto geodata
+# ==============================
+geo_kpi <- as.geodata(df, coords.col = c("Longitud", "Latitud"), data.col = "KPI")
+
+# ==============================
+# 4) Variograma empírico
+# ==============================
+vario_emp <- variog(geo_kpi, option = "bin", max.dist = 0.55)
+
+# ==============================
+# 5) Parámetros del mejor ajuste (Tarea 2)
+# ==============================
+tau2  <- 8744.64     # nugget
+sigma2 <- 17489.29   # sill parcial
+phi   <- 0.0922      # parámetro de escala
+
+# ==============================
+# 6) Crear curva teórica exponencial
+# gamma(h) = tau2 + sigma2*(1-exp(-h/phi)), h>0
+# ==============================
+h_seq <- seq(0, max(vario_emp$u), length.out = 200)
+gamma_exp <- tau2 + sigma2 * (1 - exp(-h_seq / phi))
+gamma_exp[1] <- 0   # para que el gráfico parta en 0 en h=0
+
+# ==============================
+# 7) Graficar empírico + ajuste teórico
+# ==============================
+plot(vario_emp$u, vario_emp$v,
+     pch = 19,
+     col = "black",
+     xlab = "Distancia de separación h",
+     ylab = expression(hat(gamma)(h)),
+     main = "Variograma empírico y ajuste exponencial isotrópico")
+
+lines(h_seq, gamma_exp, lwd = 2, col = "blue")
+
+legend("bottomright",
+       legend = c("Variograma empírico", "Modelo exponencial"),
+       col = c("black", "blue"),
+       lty = c(NA, 1),
+       pch = c(19, NA),
+       lwd = c(NA, 2),
+       bty = "n")
